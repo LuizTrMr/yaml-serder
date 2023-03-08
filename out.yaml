@@ -1,0 +1,13 @@
+arr:
+  -
+   - 1
+   - 2
+  -
+   - 3
+   - 4
+d_arr: null
+s:
+  i: 10
+  b_struct:
+    anything: 0
+    boolean: true
