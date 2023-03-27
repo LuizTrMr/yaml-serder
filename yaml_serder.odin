@@ -1,4 +1,4 @@
-package main
+package yaml_serder
 
 import "core:fmt"
 import "core:os"
@@ -45,10 +45,11 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 			 reflect.Type_Info_Procedure, reflect.Type_Info_Soa_Pointer,
 			 reflect.Type_Info_Multi_Pointer, reflect.Type_Info_Pointer,
 			 reflect.Type_Info_Type_Id, reflect.Type_Info_Any,
-			 reflect.Type_Info_Bit_Set, reflect.Type_Info_Enum,
-			 reflect.Type_Info_Union, reflect.Type_Info_Named: {
+			 reflect.Type_Info_Bit_Set, reflect.Type_Info_Union,
+			 reflect.Type_Info_Named: {
 				return .Unsupported_Type
 		}
+
 		case reflect.Type_Info_Struct: {
 			fields := reflect.struct_fields_zipped(id)
 			for field in fields {
@@ -63,6 +64,10 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 				}
 				ser_yaml(sb, field_value, opts, identation+opts.ident_size) or_return
 			}
+		}
+
+		case reflect.Type_Info_Enum: {
+			ser_yaml(sb, any{v.data, info.base.id}, opts, identation+opts.ident_size) or_return
 		}
 
 		case reflect.Type_Info_Array: {
