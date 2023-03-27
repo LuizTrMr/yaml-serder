@@ -5,9 +5,24 @@ arr:
   -
    - 3
    - 4
-d_arr: null
-s:
-  i: 10
-  b_struct:
-    anything: 0
-    boolean: true
+enum_arr:
+  2:
+    i: 0
+    b_struct:
+      anything: 0
+      boolean: false
+  4:
+    i: 0
+    b_struct:
+      anything: 0
+      boolean: false
+  10:
+    i: 0
+    b_struct:
+      anything: 0
+      boolean: false
+  18:
+    i: 0
+    b_struct:
+      anything: 0
+      boolean: false

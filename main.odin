@@ -10,7 +10,9 @@ import "core:mem"
 import "core:strconv"
 
 SerializeError :: enum {
+	None,
 	Unsupported_Type,
+	Unsupported_Map_Key_Type,
 }
 
 B :: struct {
@@ -25,8 +27,7 @@ A :: struct {
 
 Test :: struct {
 	arr: [2][2]int,
-	d_arr: [dynamic]int,
-	s: A,
+	enum_arr: #sparse[SomeEnum]A,
 }
 
 SomeEnum :: enum {
@@ -37,7 +38,7 @@ SomeEnum :: enum {
 }
 
 main :: proc() {
-	file, err := os.open("serde/out.yaml")
+	file, err := os.open("out.yaml")
 	if err != os.ERROR_NONE {
 		fmt.println("ERROR while opening file: ", err)
 	}
@@ -57,22 +58,35 @@ main :: proc() {
 			[2]int{1, 2},
 			[2]int{3, 4},
 		},
-		nil,
-		A{10, B{0, true}},
+		#sparse[SomeEnum]A{},
 	}
-	data, ser_err := serialize_yaml(test, SerializerOptions{false, 2, true})
-	if ser_err != nil {
-		fmt.println("ERROR while serializing: ", err)
-	} else {
-		os.write(file, data)
+	opts := SerializerOptions{false, 2, false}
+	data, ser_err := serialize_yaml(test)
+	switch ser_err {
+		case .None: {
+			fmt.println("No errors")
+			os.write(file, data)
+		}
+		case .Unsupported_Type: {
+			fmt.println("Unsupported type")
+		}
+		case .Unsupported_Map_Key_Type: {
+			fmt.println("Unsupported map key type")
+		}
 	}
 }
 
 serialize_yaml :: proc(value: any, options : SerializerOptions = {}) -> ([]byte, SerializeError) {
 	opts: SerializerOptions
-	if options == {} {
-		opts = SerializerOptions{true, 2, true}
-	} else { opts = options }
+	if options == {} { // Default values
+		opts = SerializerOptions{
+			one_line_array = true,
+			ident_size     = 2,
+			null_str       = true,
+		}
+	} else {
+		opts = options
+	}
 	sb := strings.builder_make()
 	err := ser_yaml(&sb, value, opts)
 	return sb.buf[:], err
@@ -81,12 +95,23 @@ serialize_yaml :: proc(value: any, options : SerializerOptions = {}) -> ([]byte,
 ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identation: int = 0) -> SerializeError {
 	if v == nil {
 		strings.write_string(sb, " null\n" if opts.null_str else " ~\n")
-		return nil
+		return .None
 	}
+
 	id := v.id
 	ti := reflect.type_info_base( type_info_of(id) )
-
 	#partial switch info in ti.variant {
+		// All unsupported types
+		case reflect.Type_Info_Quaternion, reflect.Type_Info_Complex,
+			reflect.Type_Info_Matrix, reflect.Type_Info_Relative_Pointer,
+			reflect.Type_Info_Simd_Vector, reflect.Type_Info_Tuple,
+			reflect.Type_Info_Procedure, reflect.Type_Info_Soa_Pointer,
+			reflect.Type_Info_Multi_Pointer, reflect.Type_Info_Pointer,
+			reflect.Type_Info_Type_Id, reflect.Type_Info_Any,
+			reflect.Type_Info_Bit_Set, reflect.Type_Info_Enum,
+			reflect.Type_Info_Union, reflect.Type_Info_Named: {
+				return .Unsupported_Type
+		}
 		case reflect.Type_Info_Struct: {
 			fields := reflect.struct_fields_zipped(id)
 			for field in fields {
@@ -108,7 +133,7 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 				ser_yaml(sb, nil, opts, identation) or_return
 			}
 			for i in 0..<info.count {
-				write_bytes(sb, []byte{'-'}, identation)
+				write_byte(sb, '-', identation)
 				data := uintptr(v.data) + uintptr(i*info.elem_size)
 				if is_record_type(info.elem.id) {
 					strings.write_byte(sb, '\n')
@@ -125,7 +150,7 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 				ser_yaml(sb, nil, opts, identation) or_return
 			}
 			for i in 0..<slice.len {
-				write_bytes(sb, []byte{'-'}, identation)
+				write_byte(sb, '-', identation)
 				data := uintptr(slice.data) + uintptr(i*info.elem_size)
 				if is_record_type(info.elem.id) {
 					strings.write_byte(sb, '\n')
@@ -142,7 +167,7 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 				ser_yaml(sb, nil, opts, identation) or_return
 			}
 			for i in 0..<array.len {
-				write_bytes(sb, []byte{'-'}, identation)
+				write_byte(sb, '-', identation)
 				data := uintptr(array.data) + uintptr(i*info.elem_size)
 				if is_record_type(info.elem.id) {
 					strings.write_byte(sb, '\n')
@@ -158,10 +183,12 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 			// E :: enum { A = 1, B = 2 }
 			// enum_arr := [E]int{ A = 2, B = 3 }
 			// Serializes to: 1: 2; 2: 3
-			strings.write_byte(sb, '\n')
-			index := runtime.type_info_base(info.index).variant.(runtime.Type_Info_Enum)
+			index := runtime.type_info_base(info.index).variant.(reflect.Type_Info_Enum)
 			element_id := info.elem.id
 			if !info.is_sparse {
+				if info.count == 0 {
+					ser_yaml(sb, nil, opts, identation) or_return
+				}
 				for i in 0..<info.count {
 					key  := index.values[i]
 					data := uintptr(v.data) + uintptr(i*info.elem_size)
@@ -179,6 +206,9 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 				}
 			} else {
 				count := len(index.values)
+				if count == 0 {
+					ser_yaml(sb, nil, opts, identation) or_return
+				}
 				sum   := 0
 				for i in 0..<count {
 					key := index.values[i]
@@ -186,7 +216,7 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 						sum += cast(int)index.values[i] - cast(int)index.values[i-1]
 					}
 					data := uintptr(v.data) + uintptr(sum*info.elem_size)
-					// -- Convert Type_Info_Enum_Value to string:
+					// -- Convert Type_Info_Enum_Value to string: Taken from `strings.write_i64`
 					buf: [32]byte
 					s := strconv.append_bits(buf[:], u64(cast(i64)key), 10, true, 64, strconv.digits, nil)
 					// --
@@ -201,21 +231,18 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 			}
 		}
 
-		case reflect.Type_Info_Map: { // TODO: Understand better
+		case reflect.Type_Info_Map: {
 			m := (^mem.Raw_Map)(v.data)
 			if m != nil {
 				if info.map_info == nil {
-					// TODO: return shit map info
-					panic("something bad")
+					return .Unsupported_Type
 				}
 				map_cap := uintptr(runtime.map_cap(m^))
 				ks, vs, hs, _, _ := runtime.map_kvh_data_dynamic(m^, info.map_info)
-				i := 0
 				for bucket_index in 0..<map_cap {
 					if !runtime.map_hash_is_valid(hs[bucket_index]) {
 						continue
 					}
-					i += 1
 					key   := rawptr(runtime.map_cell_index_dynamic(ks, info.map_info.ks, bucket_index))
 					value := rawptr(runtime.map_cell_index_dynamic(vs, info.map_info.vs, bucket_index))
 
@@ -227,23 +254,25 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 						name: string
 
 						#partial switch info in ti.variant {
-							case runtime.Type_Info_String: {
+							case reflect.Type_Info_String: {
 								switch s in a {
 									case string: name = s
 									case cstring: name = string(s)
 								}
 								write_key(sb, name, identation)
 							}
-							case: // TODO: return Shit type for key
+							case: return .Unsupported_Map_Key_Type
 						}
 					}
 					ser_yaml(sb, any{value, info.value.id}, opts, identation+opts.ident_size) or_return
 				}
+			} else {
+				ser_yaml(sb, nil, opts, identation) or_return
 			}
 		}
 		case: fmt.sbprintf(sb, " %v\n", v)
 	}
-	return nil
+	return .None
 }
 
 write_key :: proc(sb: ^strings.Builder, key: string, identation: int) {
@@ -256,14 +285,14 @@ write_key :: proc(sb: ^strings.Builder, key: string, identation: int) {
 	fmt.sbprintf(sb, "%v%v:", whitespaces, key)
 }
 
-write_bytes :: proc(sb: ^strings.Builder, bytes: []byte, identation: int = 0) {
+write_byte :: proc(sb: ^strings.Builder, b: byte, identation: int = 0) {
 	whitespaces := make([]byte, identation)
 	defer delete(whitespaces)
 	for i in 0..<identation {
 		whitespaces[i] = ' '
 	}
 	strings.write_bytes(sb, whitespaces)
-	strings.write_bytes(sb, bytes)
+	strings.write_byte(sb, b)
 }
 
 SerializerOptions :: struct {
@@ -276,7 +305,9 @@ is_empty :: proc(v: any) -> bool {
 	id := v.id
 	ti := reflect.type_info_base( type_info_of(id) )
 	#partial switch info in ti.variant {
-		case reflect.Type_Info_Array: if info.count == 0 { return true }
+		case reflect.Type_Info_Array:{
+			if info.count == 0 { return true }
+		}
 		case reflect.Type_Info_Slice: {
 			slice := cast(^mem.Raw_Slice)v.data
 			if slice.len == 0 { return true }
@@ -286,20 +317,20 @@ is_empty :: proc(v: any) -> bool {
 			if array.len == 0 { return true }
 		}
 		case reflect.Type_Info_Enumerated_Array: { // TODO: if empty
+			fmt.println("Enumerated_Array")
+			if !info.is_sparse {
+				fmt.println("info.count =", info.count)
+				if info.count == 0 { return true }
+			} else {
+				index := runtime.type_info_base(info.index).variant.(reflect.Type_Info_Enum)
+				count := len(index.values)
+				fmt.println("count =", count)
+				if count == 0 { return true }
+			}
 		}
 		case: return false
 	}
 	return false
-}
-
-
-is_struct :: proc(id: typeid) -> bool { using reflect
-	type := type_info_of(id)
-	base_type := reflect.type_info_base(type).variant
-	#partial switch in base_type {
-		case Type_Info_Struct: return true
-		case: return false
-	}
 }
 
 is_record_type :: proc(id: typeid) -> bool { using reflect
