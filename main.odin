@@ -1,4 +1,3 @@
-// Just check if identation is != 0 to write the new line
 package main
 
 import "core:fmt"
@@ -15,74 +14,12 @@ SerializeError :: enum {
 	Unsupported_Map_Key_Type,
 }
 
-B :: struct {
-	anything: int,
-	boolean: bool,
-}
-
-A :: struct {
-	i: i32,
-	b_struct: B,
-}
-
-Test :: struct {
-	arr: [2][2]int,
-	enum_arr: #sparse[SomeEnum]A,
-}
-
-SomeEnum :: enum {
-	A = 2,
-	B = 4,
-	C = 10,
-	D = 18,
-}
-
-main :: proc() {
-	file, err := os.open("out.yaml")
-	if err != os.ERROR_NONE {
-		fmt.println("ERROR while opening file: ", err)
-	}
-	defer os.close(file)
-
-	// Tests
-	dyn := [dynamic]int{1,2}
-	append(&dyn, 3)
-	enumerated_arr := #sparse[SomeEnum]A{
-		.A = A{14, B{0, false}},
-		.B = A{20, B{1, true}},
-		.C = A{35, B{2, false}},
-		.D = A{49, B{3, true}},
-	}
-	test := Test{
-		[2][2]int{
-			[2]int{1, 2},
-			[2]int{3, 4},
-		},
-		#sparse[SomeEnum]A{},
-	}
-	opts := SerializerOptions{false, 2, false}
-	data, ser_err := serialize_yaml(test)
-	switch ser_err {
-		case .None: {
-			fmt.println("No errors")
-			os.write(file, data)
-		}
-		case .Unsupported_Type: {
-			fmt.println("Unsupported type")
-		}
-		case .Unsupported_Map_Key_Type: {
-			fmt.println("Unsupported map key type")
-		}
-	}
-}
-
 serialize_yaml :: proc(value: any, options : SerializerOptions = {}) -> ([]byte, SerializeError) {
 	opts: SerializerOptions
 	if options == {} { // Default values
 		opts = SerializerOptions{
-			one_line_array = true,
-			ident_size     = 2,
-			null_str       = true,
+			ident_size = 2,
+			null_str   = true,
 		}
 	} else {
 		opts = options
@@ -103,13 +40,13 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 	#partial switch info in ti.variant {
 		// All unsupported types
 		case reflect.Type_Info_Quaternion, reflect.Type_Info_Complex,
-			reflect.Type_Info_Matrix, reflect.Type_Info_Relative_Pointer,
-			reflect.Type_Info_Simd_Vector, reflect.Type_Info_Tuple,
-			reflect.Type_Info_Procedure, reflect.Type_Info_Soa_Pointer,
-			reflect.Type_Info_Multi_Pointer, reflect.Type_Info_Pointer,
-			reflect.Type_Info_Type_Id, reflect.Type_Info_Any,
-			reflect.Type_Info_Bit_Set, reflect.Type_Info_Enum,
-			reflect.Type_Info_Union, reflect.Type_Info_Named: {
+			 reflect.Type_Info_Matrix, reflect.Type_Info_Relative_Pointer,
+			 reflect.Type_Info_Simd_Vector, reflect.Type_Info_Tuple,
+			 reflect.Type_Info_Procedure, reflect.Type_Info_Soa_Pointer,
+			 reflect.Type_Info_Multi_Pointer, reflect.Type_Info_Pointer,
+			 reflect.Type_Info_Type_Id, reflect.Type_Info_Any,
+			 reflect.Type_Info_Bit_Set, reflect.Type_Info_Enum,
+			 reflect.Type_Info_Union, reflect.Type_Info_Named: {
 				return .Unsupported_Type
 		}
 		case reflect.Type_Info_Struct: {
@@ -178,7 +115,7 @@ ser_yaml :: proc(sb: ^strings.Builder, v: any, opts: SerializerOptions, identati
 			}
 		}
 
-		case reflect.Type_Info_Enumerated_Array: { // TODO: if empty
+		case reflect.Type_Info_Enumerated_Array: {
 			// Serializes to int value: value, e.g.:
 			// E :: enum { A = 1, B = 2 }
 			// enum_arr := [E]int{ A = 2, B = 3 }
@@ -296,7 +233,6 @@ write_byte :: proc(sb: ^strings.Builder, b: byte, identation: int = 0) {
 }
 
 SerializerOptions :: struct {
-	one_line_array: bool,
 	ident_size: int,
 	null_str: bool,
 }
@@ -316,7 +252,7 @@ is_empty :: proc(v: any) -> bool {
 			array := cast(^mem.Raw_Dynamic_Array)v.data
 			if array.len == 0 { return true }
 		}
-		case reflect.Type_Info_Enumerated_Array: { // TODO: if empty
+		case reflect.Type_Info_Enumerated_Array: {
 			fmt.println("Enumerated_Array")
 			if !info.is_sparse {
 				fmt.println("info.count =", info.count)
