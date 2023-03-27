@@ -30,7 +30,7 @@ main :: proc() {
 	data, err := serialize_yaml(entt)
 	switch err {
 		case .None: {
-			fmt.println(string(data))
+			fmt.print(string(data))
 		}
 		case .Unsupported_Type: {
 			fmt.println("err :", err)
